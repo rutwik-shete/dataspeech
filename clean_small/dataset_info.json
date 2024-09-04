@@ -1,0 +1,132 @@
+{
+  "builder_name": "parquet",
+  "citation": "",
+  "config_name": "dev",
+  "dataset_name": "libritts_r",
+  "dataset_size": 1546114506,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/blabble-io/libritts_r@0d1718db351207d5a493135a62d5ed8cc4733830/data/dev.clean/dev.clean-00000-of-00004.parquet": {
+      "num_bytes": 381946460,
+      "checksum": null
+    },
+    "hf://datasets/blabble-io/libritts_r@0d1718db351207d5a493135a62d5ed8cc4733830/data/dev.clean/dev.clean-00001-of-00004.parquet": {
+      "num_bytes": 405459531,
+      "checksum": null
+    },
+    "hf://datasets/blabble-io/libritts_r@0d1718db351207d5a493135a62d5ed8cc4733830/data/dev.clean/dev.clean-00002-of-00004.parquet": {
+      "num_bytes": 383349109,
+      "checksum": null
+    },
+    "hf://datasets/blabble-io/libritts_r@0d1718db351207d5a493135a62d5ed8cc4733830/data/dev.clean/dev.clean-00003-of-00004.parquet": {
+      "num_bytes": 368779639,
+      "checksum": null
+    }
+  },
+  "download_size": 1539534739,
+  "features": {
+    "text": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "text_original": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "speaker_id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "path": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "chapter_id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "utterance_pitch_mean": {
+      "dtype": "float32",
+      "_type": "Value"
+    },
+    "utterance_pitch_std": {
+      "dtype": "float32",
+      "_type": "Value"
+    },
+    "snr": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "c50": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "speaking_rate": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "phonemes": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "stoi": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "si-sdr": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "pesq": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "noise": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "reverberation": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "speech_monotony": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "sdr_noise": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "pesq_speech_quality": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 3085649245,
+  "splits": {
+    "dev.clean": {
+      "name": "dev.clean",
+      "num_bytes": 1546114506,
+      "num_examples": 5736,
+      "shard_lengths": [
+        1434,
+        1434,
+        1434,
+        1434
+      ],
+      "dataset_name": "libritts_r"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
