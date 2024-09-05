@@ -383,24 +383,14 @@ def main():
             with accelerator.local_main_process_first():
                 raw_datasets[split] = load_from_disk(
                     data_args.dataset_name,
-                    # data_args.dataset_config_name,
-                    # split=split,
-                    # cache_dir=model_args.cache_dir,
-                    # token=model_args.token,
-                    # num_proc=data_args.preprocessing_num_workers,
                 )
     else:
         with accelerator.local_main_process_first():
             # load all splits for annotation
             raw_datasets = load_from_disk(
                 data_args.dataset_name,
-                # data_args.dataset_config_name,
-                # cache_dir=model_args.cache_dir,
-                # token=model_args.token,
-                # num_proc=data_args.preprocessing_num_workers,
             )
 
-    print(raw_datasets)
     raw_datasets_features = set(raw_datasets.features.keys())
 
     if data_args.max_eval_samples is not None:
@@ -422,77 +412,97 @@ def main():
     )
     quantization_config = get_quantization_config(model_args)
 
-    model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        revision=model_args.model_revision,
-        variant=model_args.model_variant,
-        trust_remote_code=model_args.trust_remote_code,
-        attn_implementation=model_args.attn_implementation,
-        torch_dtype=torch_dtype,
-        device_map=get_kbit_device_map() if quantization_config is not None else None,
-        quantization_config=quantization_config,
-        low_cpu_mem_usage=True,
-        token=model_args.token,
-    ).eval()
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     revision=model_args.model_revision,
+    #     variant=model_args.model_variant,
+    #     trust_remote_code=model_args.trust_remote_code,
+    #     attn_implementation=model_args.attn_implementation,
+    #     torch_dtype=torch_dtype,
+    #     device_map=get_kbit_device_map() if quantization_config is not None else None,
+    #     quantization_config=quantization_config,
+    #     low_cpu_mem_usage=True,
+    #     token=model_args.token,
+    # ).eval()
 
-    if model_args.torch_compile:
-        # torch compile only compatible with gemma and llama
-        if not callable(getattr(model, "_setup_cache", None)):
-            raise ValueError(
-                f"Static k/v cache is not compatible with the model {model.__class__.__name__}. Set `--torch_compile=False"
-                "for dynamic k/v cache"
-            )
-        model.generation_config.cache_implementation = "static"
-        # compile the forward pass (but not the top-{p,k} sampling)
-        model = torch.compile(model, mode="reduce-overhead", fullgraph=True)
+    # if model_args.torch_compile:
+    #     # torch compile only compatible with gemma and llama
+    #     if not callable(getattr(model, "_setup_cache", None)):
+    #         raise ValueError(
+    #             f"Static k/v cache is not compatible with the model {model.__class__.__name__}. Set `--torch_compile=False"
+    #             "for dynamic k/v cache"
+    #         )
+    #     model.generation_config.cache_implementation = "static"
+    #     # compile the forward pass (but not the top-{p,k} sampling)
+    #     model = torch.compile(model, mode="reduce-overhead", fullgraph=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        revision=model_args.model_revision,
-        trust_remote_code=model_args.trust_remote_code,
-        use_fast=model_args.use_fast_tokenizer,
-        padding_side="left",
-    )
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = tokenizer.bos_token_id
-        model.generation_config.pad_token_id = model.generation_config.eos_token_id
+    # tokenizer = AutoTokenizer.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     revision=model_args.model_revision,
+    #     trust_remote_code=model_args.trust_remote_code,
+    #     use_fast=model_args.use_fast_tokenizer,
+    #     padding_side="left",
+    # )
+    # if tokenizer.pad_token_id is None:
+    #     tokenizer.pad_token_id = tokenizer.bos_token_id
+    #     model.generation_config.pad_token_id = model.generation_config.eos_token_id
 
 
-    def prepare_dataset(sample):
-        sample_prompt = PROMPT
-        sample["speaker_id"] = id_to_name[sample["speaker_id"]]
-        for key in EXPECTED_COLUMNS:
-            sample_prompt = sample_prompt.replace(f"[{key}]", sample[key])
-        sample_prompt = [{"role": "user", "content": sample_prompt}]
-        token_ids = tokenizer.apply_chat_template(sample_prompt)
-        sample["input_ids"] = token_ids
-        return sample
+    # def prepare_dataset(sample):
+    #     sample_prompt = PROMPT
+    #     sample["speaker_id"] = id_to_name[sample["speaker_id"]]
+    #     for key in EXPECTED_COLUMNS:
+    #         sample_prompt = sample_prompt.replace(f"[{key}]", sample[key])
+    #     sample_prompt = [{"role": "user", "content": sample_prompt}]
+    #     token_ids = tokenizer.apply_chat_template(sample_prompt)
+    #     sample["input_ids"] = token_ids
+    #     return sample
 
-    with accelerator.local_main_process_first():
-        vectorized_datasets = raw_datasets.map(
-            prepare_dataset, num_proc=data_args.preprocessing_num_workers, desc="Preparing prompts"
-        )
+    # with accelerator.local_main_process_first():
+    #     vectorized_datasets = raw_datasets.map(
+    #         prepare_dataset, num_proc=data_args.preprocessing_num_workers, desc="Preparing prompts"
+    #     )
 
     # Prepare everything with our `accelerator`
-    model = accelerator.prepare(model)
-    data_collator = DataCollatorWithPadding(tokenizer)
+    # model = accelerator.prepare(model)
+    # data_collator = DataCollatorWithPadding(tokenizer)
 
     def generate_step(batch): # Have to add the mistral API calling here
-        output_ids = accelerator.unwrap_model(model).generate(
-            batch["input_ids"],
-            attention_mask=batch["attention_mask"],
-            do_sample=model_args.do_sample,
-            temperature=model_args.temperature,
-            max_new_tokens=model_args.max_new_tokens,
-        )
-        output_ids = accelerator.pad_across_processes(output_ids, dim=1, pad_index=tokenizer.pad_token_id)
+
+        import requests
+
+        # The API endpoint
+        url = "https://jsonplaceholder.typicode.com/posts"
+
+        # Data to be sent
+        data = {
+            "userID": 1,
+            "title": "Making a POST request",
+            "body": "This is the data we created."
+        }
+
+        # A POST request to the API
+        response = requests.post(url, json=data)
+
+        # Print the response
+        print(response.json())
+
+
+        # output_ids = accelerator.unwrap_model(model).generate(
+        #     batch["input_ids"],
+        #     attention_mask=batch["attention_mask"],
+        #     do_sample=model_args.do_sample,
+        #     temperature=model_args.temperature,
+        #     max_new_tokens=model_args.max_new_tokens,
+        # )
+        # output_ids = accelerator.pad_across_processes(output_ids, dim=1, pad_index=tokenizer.pad_token_id)
         return output_ids
 
-    def postprocess_dataset(sample):
-        prompt_text = tokenizer.decode(sample["input_ids"], skip_special_tokens=True)
-        generated_text = tokenizer.decode(sample["generated_ids"], skip_special_tokens=True)
-        sample["text_description"] = generated_text[len(prompt_text) :]
-        return sample
+    # def postprocess_dataset(sample):
+    #     prompt_text = tokenizer.decode(sample["input_ids"], skip_special_tokens=True)
+    #     generated_text = tokenizer.decode(sample["generated_ids"], skip_special_tokens=True)
+    #     sample["text_description"] = generated_text[len(prompt_text) :]
+    #     return sample
 
     for split in vectorized_datasets:
         data_loader = DataLoader(
