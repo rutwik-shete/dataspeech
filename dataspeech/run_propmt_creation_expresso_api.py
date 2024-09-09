@@ -22,6 +22,12 @@ from transformers import (
     HfArgumentParser,
 )
 
+import requests
+
+# The API endpoint
+mistral_url = "http://localhost:11434/api/generate"
+
+
 
 logger = get_logger(__name__, log_level="INFO")
 
@@ -213,7 +219,7 @@ _RE_CHECKPOINT = re.compile(r"^checkpoint-(\d+).json$")
 def save_checkpoint(output_dir, all_generated_ids, step):
     checkpoint_path = f"{CHECKPOINT_PREFIX}-{step}.json"
     output_path = os.path.join(output_dir, checkpoint_path)
-    all_generated_ids = [ids.tolist() for ids in all_generated_ids]
+    all_generated_ids = [ids for ids in all_generated_ids]
     with open(output_path, "w") as file:
         json.dump(all_generated_ids, file)
 
@@ -348,6 +354,91 @@ You are free to change the order of the information, and replace synonymous term
 
 For the information: '[speaker_id]', '[style]', '[speaking_rate]' the corresponding description is:"""
 
+def collate_fn(batch):
+    # Initialize lists to store batched data
+    texts = []
+    texts_original = []
+    speaker_ids = []
+    paths = []
+    chapter_ids = []
+    ids = []
+    utterance_pitch_means = []
+    utterance_pitch_stds = []
+    snrs = []
+    c50s = []
+    speaking_rates = []
+    phonemes = []
+    stois = []
+    si_sdrs = []
+    pesqs = []
+    noises = []
+    reverberations = []
+    speech_monotonies = []
+    sdr_noises = []
+    pesq_speech_qualities = []
+    input_ids = []
+
+    # Iterate through the batch and extract each field
+    for item in batch:
+        texts.append(item['text'])
+        texts_original.append(item['text_original'])
+        speaker_ids.append(item['speaker_id'])
+        paths.append(item['path'])
+        chapter_ids.append(item['chapter_id'])
+        ids.append(item['id'])
+        
+        # Check if the value is a tensor and convert to float32
+        utterance_pitch_means.append(item['utterance_pitch_mean'].float() if isinstance(item['utterance_pitch_mean'], torch.Tensor) else torch.tensor(item['utterance_pitch_mean'], dtype=torch.float32))
+        utterance_pitch_stds.append(item['utterance_pitch_std'].float() if isinstance(item['utterance_pitch_std'], torch.Tensor) else torch.tensor(item['utterance_pitch_std'], dtype=torch.float32))
+        snrs.append(item['snr'].float() if isinstance(item['snr'], torch.Tensor) else torch.tensor(item['snr'], dtype=torch.float32))
+        c50s.append(item['c50'].float() if isinstance(item['c50'], torch.Tensor) else torch.tensor(item['c50'], dtype=torch.float32))
+        stois.append(item['stoi'].float() if isinstance(item['stoi'], torch.Tensor) else torch.tensor(item['stoi'], dtype=torch.float32))
+        si_sdrs.append(item['si-sdr'].float() if isinstance(item['si-sdr'], torch.Tensor) else torch.tensor(item['si-sdr'], dtype=torch.float32))
+        pesqs.append(item['pesq'].float() if isinstance(item['pesq'], torch.Tensor) else torch.tensor(item['pesq'], dtype=torch.float32))
+
+        speaking_rates.append(item['speaking_rate'])
+        phonemes.append(item['phonemes'])
+        noises.append(item['noise'])
+        reverberations.append(item['reverberation'])
+        speech_monotonies.append(item['speech_monotony'])
+        sdr_noises.append(item['sdr_noise'])
+        pesq_speech_qualities.append(item['pesq_speech_quality'])
+        input_ids.append(item['input_ids'])
+
+    # Stack all the tensors
+    utterance_pitch_means = torch.stack(utterance_pitch_means)
+    utterance_pitch_stds = torch.stack(utterance_pitch_stds)
+    snrs = torch.stack(snrs)
+    c50s = torch.stack(c50s)
+    stois = torch.stack(stois)
+    si_sdrs = torch.stack(si_sdrs)
+    pesqs = torch.stack(pesqs)
+
+    # Return the batch as a dictionary of lists and tensors
+    return {
+        'text': texts,
+        'text_original': texts_original,
+        'speaker_id': speaker_ids,
+        'path': paths,
+        'chapter_id': chapter_ids,
+        'id': ids,
+        'utterance_pitch_mean': utterance_pitch_means,
+        'utterance_pitch_std': utterance_pitch_stds,
+        'snr': snrs,
+        'c50': c50s,
+        'speaking_rate': speaking_rates,
+        'phonemes': phonemes,
+        'stoi': stois,
+        'si-sdr': si_sdrs,
+        'pesq': pesqs,
+        'noise': noises,
+        'reverberation': reverberations,
+        'speech_monotony': speech_monotonies,
+        'sdr_noise': sdr_noises,
+        'pesq_speech_quality': pesq_speech_qualities,
+        'input_ids': input_ids
+    }
+
 
 def main():
     # 1. Parse input arguments
@@ -447,46 +538,54 @@ def main():
     #     tokenizer.pad_token_id = tokenizer.bos_token_id
     #     model.generation_config.pad_token_id = model.generation_config.eos_token_id
 
+    def prepare_dataset(sample):
+        sample_prompt = PROMPT
+        sample["speaker_id"] = id_to_name[sample["speaker_id"]]
+        for key in EXPECTED_COLUMNS:
+            sample_prompt = sample_prompt.replace(f"[{key}]", sample[key])
+        sample_prompt = [{"role": "user", "content": sample_prompt}]
+        # token_ids = tokenizer.apply_chat_template(sample_prompt)
+        sample["input_ids"] = sample_prompt
+        return sample
 
-    # def prepare_dataset(sample):
-    #     sample_prompt = PROMPT
-    #     sample["speaker_id"] = id_to_name[sample["speaker_id"]]
-    #     for key in EXPECTED_COLUMNS:
-    #         sample_prompt = sample_prompt.replace(f"[{key}]", sample[key])
-    #     sample_prompt = [{"role": "user", "content": sample_prompt}]
-    #     token_ids = tokenizer.apply_chat_template(sample_prompt)
-    #     sample["input_ids"] = token_ids
-    #     return sample
-
-    # with accelerator.local_main_process_first():
-    #     vectorized_datasets = raw_datasets.map(
-    #         prepare_dataset, num_proc=data_args.preprocessing_num_workers, desc="Preparing prompts"
-    #     )
+    with accelerator.local_main_process_first():
+        vectorized_datasets = raw_datasets.map(
+            prepare_dataset, num_proc=data_args.preprocessing_num_workers, desc="Preparing prompts"
+        )
 
     # Prepare everything with our `accelerator`
     # model = accelerator.prepare(model)
     # data_collator = DataCollatorWithPadding(tokenizer)
 
     def generate_step(batch): # Have to add the mistral API calling here
-
-        import requests
-
-        # The API endpoint
-        url = "https://jsonplaceholder.typicode.com/posts"
-
+        
         # Data to be sent
         data = {
-            "userID": 1,
-            "title": "Making a POST request",
-            "body": "This is the data we created."
+           "model": "mistral",
+            "prompt": json.dumps(batch["input_ids"])
         }
 
         # A POST request to the API
-        response = requests.post(url, json=data)
+        response = requests.post(mistral_url, json=data, stream=True)
 
-        # Print the response
-        print(response.json())
+        sentence = []  # To collect words into a sentence
 
+        # Iterate over each chunk in the stream
+        for chunk in response.iter_content(chunk_size=None):
+            if chunk:
+                # Assuming the API sends a word in each chunk (decode and strip to clean)
+                chunk = chunk.decode('utf-8').strip()
+                chunk = json.loads(chunk)
+                word = chunk['response']
+                isDone = chunk['done']
+                sentence.append(word) 
+                
+                if isDone:
+                    break
+
+        # Join the list into a single sentence and print it
+        full_sentence = ''.join(sentence)
+        
 
         # output_ids = accelerator.unwrap_model(model).generate(
         #     batch["input_ids"],
@@ -496,7 +595,8 @@ def main():
         #     max_new_tokens=model_args.max_new_tokens,
         # )
         # output_ids = accelerator.pad_across_processes(output_ids, dim=1, pad_index=tokenizer.pad_token_id)
-        return output_ids
+        # return output_ids
+        return full_sentence
 
     # def postprocess_dataset(sample):
     #     prompt_text = tokenizer.decode(sample["input_ids"], skip_special_tokens=True)
@@ -504,52 +604,55 @@ def main():
     #     sample["text_description"] = generated_text[len(prompt_text) :]
     #     return sample
 
-    for split in vectorized_datasets:
-        data_loader = DataLoader(
-            vectorized_datasets[split],
-            batch_size=model_args.per_device_eval_batch_size,
-            collate_fn=data_collator,
-            num_workers=data_args.dataloader_num_workers,
-            pin_memory=True,
-        )
-        data_loader = accelerator.prepare(data_loader)
-        total_inference_steps = len(data_loader)
-        progress_bar = tqdm(
-            range(total_inference_steps), desc=" ... ", position=0, disable=not accelerator.is_local_main_process
-        )
+    
+    data_loader = DataLoader(
+        vectorized_datasets,
+        batch_size=model_args.per_device_eval_batch_size,
+        # collate_fn=data_collator,
+        collate_fn=collate_fn,
+        num_workers=data_args.dataloader_num_workers,
+        pin_memory=True,
+    )
+    data_loader = accelerator.prepare(data_loader)
+    total_inference_steps = len(data_loader)
+    progress_bar = tqdm(
+        range(total_inference_steps), desc=" ... ", position=0, disable=not accelerator.is_local_main_process
+    )
 
-        split_output_dir = os.path.join(data_args.output_dir, split)
-        all_generated_ids, cur_step = get_last_checkpoint(split_output_dir)
+    split_output_dir = os.path.join(data_args.output_dir, "train")
+    all_generated_ids, cur_step = get_last_checkpoint(split_output_dir)
 
-        if cur_step > 0:
-            logger.info(f"Resuming {split} from step {cur_step}")
-            # efficiently skip the first n batches
-            data_loader = skip_first_batches(data_loader, cur_step)
-            progress_bar.update(cur_step)
+    if cur_step > 0:
+        logger.info(f"Resuming {split} from step {cur_step}")
+        # efficiently skip the first n batches
+        data_loader = skip_first_batches(data_loader, cur_step)
+        progress_bar.update(cur_step)
 
-        while cur_step < total_inference_steps:
-            for batch in data_loader:
-                generated_ids = generate_step(batch)
-                generated_ids = accelerator.gather_for_metrics(generated_ids)
-                all_generated_ids.extend(generated_ids.cpu().numpy())
+    while cur_step < total_inference_steps:
+        for batch in data_loader:
+            generated_ids = generate_step(batch)
+            # vectorized_datasets[vectorized_datasets['id'] == batch['id']]['text_description'] = generated_ids
+            # batch["text_description"] = generated_ids
+            # generated_ids = accelerator.gather_for_metrics(generated_ids)
+            all_generated_ids.append(generated_ids)
 
-                cur_step += 1
-                progress_bar.update(1)
+            cur_step += 1
+            progress_bar.update(1)
 
-                if (cur_step % data_args.save_steps == 0) or (cur_step == total_inference_steps):
-                    save_checkpoint(split_output_dir, all_generated_ids, cur_step)
-                    rotate_checkpoints(data_args.save_total_limit, output_dir=split_output_dir)
+            if (cur_step % data_args.save_steps == 0) or (cur_step == total_inference_steps):
+                save_checkpoint(split_output_dir, all_generated_ids, cur_step)
+            #     rotate_checkpoints(data_args.save_total_limit, output_dir=split_output_dir)
 
-        vectorized_datasets[split] = vectorized_datasets[split].add_column("generated_ids", all_generated_ids)
+    vectorized_datasets = vectorized_datasets.add_column("generated_ids", all_generated_ids)
 
-        if accelerator.is_main_process:
-            vectorized_datasets[split] = vectorized_datasets[split].map(
-                postprocess_dataset,
-                num_proc=data_args.preprocessing_num_workers,
-                desc="Postprocessing dataset",
-                remove_columns=["input_ids", "generated_ids"],
-            )
-        accelerator.wait_for_everyone()
+    # if accelerator.is_main_process:
+    #     vectorized_datasets = vectorized_datasets.map(
+    #         postprocess_dataset,
+    #         num_proc=data_args.preprocessing_num_workers,
+    #         desc="Postprocessing dataset",
+    #         remove_columns=["input_ids", "generated_ids"],
+    #     )
+    # accelerator.wait_for_everyone()
 
     if accelerator.is_main_process:
         vectorized_datasets.save_to_disk(data_args.output_dir)
