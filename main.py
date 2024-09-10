@@ -82,6 +82,7 @@ if __name__ == "__main__":
             num_proc=args.cpu_num_workers,
             writer_batch_size= args.cpu_writer_batch_size,
             fn_kwargs={"audio_column_name": audio_column_name, "text_column_name": text_column_name},
+            load_from_cache_file=False
         )
     else:
         rate_dataset = dataset.map(
